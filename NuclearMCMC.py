@@ -19,7 +19,7 @@ np.random.seed(42)
 
 def exponential_decay(t, N0, lambda_decay):
     """
-    Exponential decay model: N(t) = N_0 * exp(-lamda t)
+    Exponential decay model: N(t) = N_0 * exp(-lamdat)
     
     Parameters:
     -----------
@@ -234,7 +234,7 @@ def plot_trace(chain, param_names=['N₀', 'λ'], true_values=None):
         ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('/mnt/user-data/outputs/trace_plots.png', dpi=300, bbox_inches='tight')
+    plt.savefig('trace_plots.png', dpi=300, bbox_inches='tight')
     print("Trace plots saved to trace_plots.png")
     plt.close()
 
@@ -249,7 +249,7 @@ def plot_corner(chain_burned, param_names=['N₀', 'λ'], true_values=None):
                        show_titles=True,
                        title_kwargs={"fontsize": 12})
     
-    plt.savefig('/mnt/user-data/outputs/corner_plot.png', dpi=300, bbox_inches='tight')
+    plt.savefig('corner_plot.png', dpi=300, bbox_inches='tight')
     print("Corner plot saved to corner_plot.png")
     plt.close()
 
@@ -284,7 +284,7 @@ def plot_posterior_histograms(chain_burned, param_names=['N₀', 'λ'], true_val
         ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('/mnt/user-data/outputs/posterior_histograms.png', dpi=300, bbox_inches='tight')
+    plt.savefig('posterior_histograms.png', dpi=300, bbox_inches='tight')
     print("Posterior histograms saved to posterior_histograms.png")
     plt.close()
 
@@ -348,7 +348,7 @@ def plot_fit_results(t, N_obs, sigma, chain_burned, N0_true, lambda_true):
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
             fontsize=10)
     
-    plt.savefig('/mnt/user-data/outputs/decay_fit.png', dpi=300, bbox_inches='tight')
+    plt.savefig('decay_fit.png', dpi=300, bbox_inches='tight')
     print("Fit results saved to decay_fit.png")
     plt.close()
 
