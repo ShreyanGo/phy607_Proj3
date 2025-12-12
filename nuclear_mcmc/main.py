@@ -61,38 +61,41 @@ def main():
 
     from nuclear_mcmc.emcee_sampler import run_emcee
 
-    # Adjust n_steps > burn_in to ensure non-empty samples
-    n_steps = 5000
-    burn_in = 1000
-
     samples_emcee, chain_emcee, acc_emcee = run_emcee(
         t, N_obs, sigma,
         n_walkers=32,
-        n_steps=n_steps,
+        n_steps=5000,
         initial_guess=(100, 0.5),
         init_spread=(1.0, 0.05),
-        burn_in=burn_in,
+        burn_in=1000,
     )
 
     print(f"emcee Acceptance Fraction: {acc_emcee:.3f}")
 
-    # Debug: check shapes
-    print("samples_emcee shape:", samples_emcee.shape)
-    print("chain_emcee shape:", chain_emcee.shape)
-
     # =========================================================================
-    # Step 3: Summary statistics for emcee samples (safeguard empty array)
+    # Step 3: Summary statistics for emcee samples
     # =========================================================================
-    print("\nSummary statistics for emcee sampler:")
 
-    if samples_emcee.size == 0:
-        print("Warning: emcee returned no samples!")
-    else:
-        print("\nN₀ (emcee):")
-        print_statistics(samples_emcee[:, 0].reshape(-1, 1))
+    print("\n============================================================")
+    print("Summary statistics for emcee sampler")
+    print("============================================================")
 
-        print("\nλ (emcee):")
-        print_statistics(samples_emcee[:, 1].reshape(-1, 1))
+    print_statistics(
+        samples_emcee,
+        param_names=["N₀", "λ"],
+        true_values=[N0_true, lambda_true],
+    )
+
+    # Effective sample sizes for emcee
+    print("\nComputing effective sample sizes for emcee...")
+    ess_N0_e = effective_sample_size(samples_emcee[:, 0])
+    ess_lambda_e = effective_sample_size(samples_emcee[:, 1])
+    print(f"  ESS(N₀) = {ess_N0_e:.1f}")
+    print(f"  ESS(λ)  = {ess_lambda_e:.1f}")
+
+    print("\nGeweke diagnostic (emcee):")
+    print(f"  N₀ z-score: {geweke_test(samples_emcee[:, 0]):.2f}")
+    print(f"  λ z-score:  {geweke_test(samples_emcee[:, 1]):.2f}")
 
     # =========================================================================
     # Step 4: Diagnostic Statistics for MH sampler
