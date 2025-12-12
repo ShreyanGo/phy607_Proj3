@@ -11,6 +11,7 @@ from nuclear_mcmc.plotting import (
     plot_corner,
     plot_posterior_histograms,
     plot_fit_results,
+    plot_corner_emcee
 )
 from nuclear_mcmc.diagnostics import (
     print_statistics,
@@ -122,10 +123,20 @@ def main():
     # =========================================================================
     print("\nGenerating plots...")
 
+    # MH sampler plots
     plot_trace(chain, param_names=["N₀", "λ"], true_values=[N0_true, lambda_true])
     plot_corner(chain_burned, param_names=["N₀", "λ"], true_values=[N0_true, lambda_true])
     plot_posterior_histograms(chain_burned, param_names=["N₀", "λ"], true_values=[N0_true, lambda_true])
 
+    # NEW: emcee corner plot
+    plot_corner_emcee(
+        samples_emcee,
+        param_names=["N₀", "λ"],
+        true_values=[N0_true, lambda_true],
+        filename="corner_plot_emcee.png"
+    )
+
+    # MH model fit plot
     plot_fit_results(
         t,
         N_obs,

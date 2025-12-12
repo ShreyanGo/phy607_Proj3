@@ -80,6 +80,37 @@ def plot_corner(chain_burned, param_names=['N₀', 'λ'], true_values=None):
     print("Corner plot saved to corner_plot.png")
     plt.close()
 
+def plot_corner_emcee(samples, param_names=['N₀', 'λ'], true_values=None,
+                      filename='corner_plot_emcee.png'):
+    """
+    Create corner plot for emcee posterior distributions
+
+    Parameters
+    ----------
+    samples : ndarray
+        Flattened emcee samples after burn-in
+    param_names : list of str
+        Parameter labels
+    true_values : list or tuple, optional
+        True parameter values
+    filename : str
+        Output filename for the saved plot
+
+    Saves
+    -----
+    corner_plot_emcee.png (default)
+    """
+    fig = corner.corner(samples,
+                        labels=param_names,
+                        truths=true_values,
+                        quantiles=[0.16, 0.5, 0.84],
+                        show_titles=True,
+                        title_kwargs={"fontsize": 12})
+
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    print(f"emcee corner plot saved to {filename}")
+    plt.close()
+
 def plot_posterior_histograms(chain_burned, param_names=['N₀', 'λ'], true_values=None):
     """
     Plot 1D posterior histograms
