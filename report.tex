@@ -1,0 +1,309 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage{geometry}
+\usepackage{physics}
+\usepackage{hyperref}
+\geometry{margin=1in}
+
+\title{Bayesian Parameter Estimation of Radioactive Decay Using\\
+Metropolis--Hastings and \texttt{emcee} Ensemble MCMC Methods}
+
+\author{Shreyan Goswami and Amelia Abruscato \\ PHY 607: Computational Physics}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We perform a Bayesian analysis of a radioactive decay model using two Markov Chain Monte Carlo (MCMC) methods: a hand-coded Metropolis--Hastings (MH) sampler and the affine-invariant ensemble sampler from the \texttt{emcee} package. We generate synthetic decay data and use it to estimate the initial activity $N_0$ and decay constant $\lambda$ by sampling the posterior distribution. Convergence is evaluated using the Geweke diagnostic and effective sample sizes. We compare the efficiency and reliability of the two MCMC methods, finding that the ensemble sampler mixes faster and converges more reliably than the Metropolis--Hastings sampler.
+\end{abstract}
+
+\section{Introduction}
+Radioactive decay is a basic physical process in which unstable nuclei change into more stable configurations, releasing energy as particles or radiation. For a large collection of identical nuclei, the decay is well described by an exponential model:
+\begin{equation}
+    N(t) = N_0 \, e^{-\lambda t},
+\end{equation}
+where $N(t)$ is the activity measured at time $t$, $N_0$ is the initial
+activity, and $\lambda$ is the decay constant, which tells us how fast the nuclei decay. These parameters are important for understanding half-life, mean life expectancy, and radiation intensity.
+
+In experiments, the measured activity is always affected by noise from statistics and instruments. Even if the decay is exactly exponential, the observed data $N_{\text{obs}}(t)$ will fluctuate around the true curve. Estimating $(N_0, \lambda)$ from noisy data, along with uncertainties, is a natural application of Bayesian inference. In this approach, we combine a likelihood function based on the measurement model with prior information to get the full posterior distribution. Sampling this posterior allows us to quantify uncertainties and correlations, which is a key goal in computational physics.
+
+Analytically integrating the posterior is usually not possible, especially when the likelihood is not Gaussian or the parameters are strongly correlated. Markov Chain Monte Carlo (MCMC) sampling provides a numerical way to explore complex probability distributions. In this project, we use two MCMC algorithms:
+\begin{enumerate}
+    \item A \textbf{handwritten Metropolis--Hastings (MH) sampler}, which uses symmetric Gaussian proposals and a simple accept--reject rule. This method is easy to understand and forms the basis of many MCMC methods, but it can mix slowly and produce strongly correlated samples when there are multiple parameters.
+    \item The \textbf{affine-invariant ensemble sampler} implemented in the \texttt{emcee} Python package. This algorithm uses a group of walkers that explore the posterior together and works well for distributions with linear correlations or elongated shapes. Ensemble methods usually need less tuning and give larger effective sample sizes than basic MH.
+\end{enumerate}
+
+By applying both samplers to the same synthetic decay data, we can compare their performance, convergence, and computational efficiency. We analyze the chains using trace plots, corner plots, effective sample sizes, and the Geweke diagnostic. The goal is to show the differences between traditional and modern MCMC methods in a physics problem and check that the inferred parameters are correct.
+
+\section{Bayesian Model}
+
+To estimate the decay parameters $(N_0, \lambda)$ from noisy
+observations, we use a Bayesian framework. This means we need a likelihood function that describes the measurement process, and priors that describe what we believe about the parameters before seeing the data. Combining these gives the posterior distribution, which tells us how probable different values of $(N_0, \lambda)$
+are after including the observed data.
+
+\subsection{Likelihood Model}
+
+In this experiment, we assume that the observed activity at time $t_i$ follows the exponential decay law plus independent Gaussian noise:
+\begin{equation}
+    N_{\text{obs}}(t_i) = N_0 e^{-\lambda t_i} + \varepsilon_i,
+\end{equation}
+where each noise term $\varepsilon_i$ is drawn from
+$\mathcal{N}(0, \sigma_i)$ with known standard deviation $\sigma_i$.
+Assuming Gaussian noise is reasonable in many lab settings, especially when the measured counts are large or the instrument noise dominates.
+
+Assuming the measurements are independent, the likelihood function is the product of Gaussian probabilities:
+\begin{equation}
+\mathcal{L}(N_0, \lambda)
+= \prod_{i=1}^n
+\frac{1}{\sqrt{2\pi}\sigma_i}
+\exp\left( -\frac{
+(N_{\text{obs}}(t_i) - N_0 e^{-\lambda t_i})^2
+}{2\sigma_i^2} \right).
+\end{equation}
+For numerical stability in MCMC sampling, it is more convenient to work with the log-likelihood:
+\begin{equation}
+\log \mathcal{L}(N_0, \lambda) = -\frac{1}{2}
+\sum_{i=1}^n \left[
+\frac{(N_{\text{obs}}(t_i) - N_0 e^{-\lambda t_i})^2}{\sigma_i^2}
++ \log(2\pi \sigma_i^2)
+\right].
+\end{equation}
+
+This likelihood shows that $N_0$ and $\lambda$ are not independent: changes in one can partly cancel changes in the other, especially if the data covers only a limited time range. This correlation affects how well different MCMC methods perform.
+
+\subsection{Prior Distributions}
+
+To complete the Bayesian model, we assign priors to $N_0$ and $\lambda$. Since both are physically non-negative, we use weakly informative uniform priors:
+\begin{align}
+    N_0 &\sim \mathrm{Uniform}(0, \infty), \\
+    \lambda &\sim \mathrm{Uniform}(0, \infty).
+\end{align}
+These priors are broad and simple, letting the data mostly determine the posterior while keeping the parameters physically meaningful.
+
+Other priors, like log-normal or half-normal distributions, could also make sense based on prior experiments. But uniform priors are simple, non-intrusive, and suitable for synthetic data.
+
+\subsection{Posterior Distribution}
+
+Bayes' theorem gives the posterior as proportional to the product
+of the likelihood and the prior:
+\begin{equation}
+    p(N_0, \lambda \mid N_{\text{obs}})
+    \propto \mathcal{L}(N_0, \lambda) \, 
+              p(N_0) \, p(\lambda).
+\end{equation}
+
+The posterior is not easy to calculate analytically because $N_0$ and $\lambda$ appear inside a nonlinear exponential. It can also show correlations and non-Gaussian shapes. For these reasons, we use MCMC sampling to approximate the posterior numerically. The next section describes the two samplers used in this study.
+
+\section{MCMC Methods}
+
+Sampling from the posterior distribution $p(N_0, \lambda \mid N_{\text{obs}})$ is hard to do analytically because the exponential decay model is nonlinear and the parameters are correlated. Markov Chain Monte Carlo (MCMC) methods give a numerical way to draw approximate samples from the posterior. They create a stochastic process whose long-term distribution matches the posterior. In this work, we implement and compare two MCMC algorithms: a hand-written Metropolis--Hastings sampler and the affine-invariant ensemble sampler from the \texttt{emcee} package.
+
+\subsection{Metropolis--Hastings Sampler}
+
+The Metropolis--Hastings (MH) algorithm is one of the most common MCMC methods. It builds a chain by repeatedly proposing a new state
+$\theta' = (N_0', \lambda')$ from the current state
+$\theta = (N_0, \lambda)$ using a proposal distribution
+$q(\theta' \mid \theta)$. Here, we use a symmetric Gaussian proposal:
+\begin{equation}
+    \theta' = \theta + \eta, \qquad
+    \eta \sim \mathcal{N}(\mathbf{0}, \Sigma),
+\end{equation}
+where $\Sigma$ is a diagonal matrix with user-chosen proposal widths.  Because the proposal is symmetric, the acceptance probability is:
+\begin{equation}
+    \alpha = \min\left( 1, \frac{\pi(\theta')}{\pi(\theta)} \right),
+\end{equation}
+where $\pi(\theta)$ is the unnormalized posterior. The proposed state is accepted with probability $\alpha$, otherwise the chain stays at $\theta$.
+
+MH is simple to understand, but it needs careful tuning. Small proposals make the chain move slowly and create strongly correlated samples. Large proposals get rejected too often, also making sampling inefficient.  We adjusted the proposal widths to get an acceptance rate of a few percent, which works well for moderately correlated two-parameter models.
+
+A limitation of single-chain MH is sensitivity to correlations. In the exponential decay model, $N_0$ and $\lambda$ are negatively correlated, forming a banana-shaped posterior. MH moves slowly along this shape, giving long autocorrelation times and small effective sample sizes (ESS). These problems motivate using more advanced samplers.
+
+\subsection{Affine-Invariant Ensemble Sampler (\texttt{emcee})}
+
+The affine-invariant ensemble sampler, introduced by Goodman and Weare and implemented in \texttt{emcee}, addresses some MH limitations. Instead of one chain, it uses $N_{\text{walkers}}$ walkers exploring the posterior together. Each walker's proposal depends on the positions of other walkers through a ``stretch move":
+\begin{equation}
+    \theta'_k = \theta_j + Z \, (\theta_k - \theta_j),
+\end{equation}
+where $\theta_k$ is the walker being updated, $\theta_j$ is a randomly chosen walker, and $Z$ is a random stretch factor. This move is affine-invariant, so the sampler works well even if the posterior is stretched or rotated.
+
+The ensemble sampler has several advantages:
+\begin{itemize}
+    \item \textbf{Less tuning:} You mostly only need to choose the number of walkers.
+    \item \textbf{Faster mixing:} Walkers explore the posterior more efficiently than a single chain.
+    \item \textbf{Larger effective sample sizes:} It often produces many more independent samples for the same computation time.
+    \item \textbf{Better handling of correlations:} It works well when parameters are correlated, like $N_0$ and $\lambda$ here.
+\end{itemize}
+
+For this project, we start 32 walkers in a small Gaussian ball around reasonable initial guesses and run 5000 steps, discarding the first 1000 steps as burn-in. The chains converge quickly and give high-quality posterior
+samples for analysis.
+
+\section{Results}
+
+\subsection{Parameter Estimates}
+
+We applied both the Metropolis--Hastings sampler and the affine-invariant ensemble sampler to the synthetic decay data generated from the true values $N_0 = 100$ and $\lambda = 0.5$. Table~\ref{tab:results} shows the posterior means, standard deviations, and effective sample sizes (ESS) for each method.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{c|cccc}
+\hline
+Method & $N_0$ (mean $\pm$ std) & $\lambda$ (mean $\pm$ std) & ESS($N_0$) & ESS($\lambda$) \\
+\hline
+Metropolis--Hastings &
+$100.3510 \pm 1.3421$ &
+$0.5029 \pm 0.0023$ &
+288 &
+316 \\
+emcee Ensemble &
+$100.3886 \pm 1.4103$ &
+$0.5030 \pm 0.0024$ &
+3820 &
+3733 \\
+\hline
+\end{tabular}
+\caption{Posterior summary statistics for both MCMC methods. ESS values are reported for each parameter.}
+\label{tab:results}
+\end{table}
+
+Both samplers successfully recover the true decay parameters within roughly one standard deviation. The Metropolis--Hastings sampler gives  $N_0 = 100.3510 \pm 1.3421$ and $\lambda = 0.5029 \pm 0.0023$, with  ESS($N_0$) = 288 and ESS($\lambda$) = 316. In comparison, the emcee ensemble sampler produces $N_0 = 100.3886 \pm 1.4103$ and $\lambda = 0.5030 \pm 0.0024$, with ESS($N_0$) = 3820 and ESS($\lambda$) = 3733. The ensemble sampler thus produces more than ten times as many independent samples, showing much better sampling efficiency.
+
+\subsection{Visualizations}
+
+\paragraph{Model Fit}
+Figure~\ref{fig:decay_fit} shows the synthetic decay data along with the best-fit model from the Metropolis--Hastings sampler. The shaded region represents one standard deviation uncertainty from the posterior.
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.7\linewidth]{decay_fit.png}
+\caption{Synthetic decay data and Metropolis--Hastings model fit. The shaded region shows 1$\sigma$ uncertainty derived from posterior samples.}
+\label{fig:decay_fit}
+\end{figure}
+
+\paragraph{Trace Plots}
+Trace plots show the sampling behavior for both parameters in the MH chain. The emcee walkers explore the posterior more evenly, as discussed below.
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.7\linewidth]{trace_plots.png}
+\caption{Trace plots for the Metropolis--Hastings sampler. The chains show autocorrelation and slower mixing compared to the emcee ensemble.}
+\label{fig:trace_plots}
+\end{figure}
+
+\paragraph{Posterior Histograms}
+Figure~\ref{fig:posterior_histograms} shows the marginal posterior
+distributions of $N_0$ and $\lambda$ from the MH sampler. These histograms give a sense of the uncertainties in the parameters.
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.7\linewidth]{posterior_histograms.png}
+\caption{Posterior histograms for the Metropolis--Hastings samples,
+showing the marginal distributions of $N_0$ and $\lambda$.}
+\label{fig:posterior_histograms}
+\end{figure}
+
+\subsection{Trace and Corner Plots}
+
+Corner plots visualize the posterior in two dimensions. Figure~\ref{fig:mh_corner} shows the MH corner plot. There is a small negative correlation between $N_0$ and $\lambda$, which makes sense: if $N_0$ is slightly higher, a slightly higher $\lambda$ can give similar early-time decay. The MH chain samples this correlation slowly, which is why the posterior contours are 
+elongated and the ESS is small.
+
+Figure~\ref{fig:emcee_corner} shows the emcee corner plot. The overall shape is similar to MH, but the samples are much denser and spread out more evenly. This reflects the better mixing of the ensemble sampler, which moves efficiently along the correlated directions.
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.7\linewidth]{corner_plot.png}
+\caption{Corner plot for Metropolis--Hastings samples. A small negative correlation between $N_0$ and $\lambda$ is visible, reflecting the exponential decay model.}
+\label{fig:mh_corner}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.7\linewidth]{corner_plot_emcee.png}
+\caption{Corner plot for emcee ensemble samples. The posterior structure is similar to MH but sampled more densely and evenly, showing better mixing and exploration efficiency.}
+\label{fig:emcee_corner}
+\end{figure}
+
+\subsection{Convergence Diagnostics}
+
+\paragraph{Effective Sample Size}
+
+The ESS estimates how many effectively independent samples there are, accounting for autocorrelation. For MH, ESS($N_0$) = 288.4 and 
+ESS($\lambda$) = 316.3, showing the chain is highly correlated. For emcee, SS($N_0$) = 3820.0 and ESS($\lambda$) = 3733.4, more than ten times larger, reflecting faster mixing and better efficiency.
+
+\paragraph{Geweke Diagnostic}
+
+The Geweke diagnostic compares the mean of the early and late parts of a chain. Large $|z|$ values suggest non-stationarity. For MH, $z_{N_0} = 24.54$ and $z_\lambda = 15.64$, indicating slow mixing. For emcee, $z_{N_0} = 2.87$ and $z_\lambda = -3.66$, which are within normal ranges and indicate satisfactory convergence.
+
+In summary, both samplers recover the parameters accurately, but the
+ensemble sampler performs better in all metrics.
+
+\section{Discussion}
+
+The results show that both MCMC methods can recover the true decay parameters from noisy data, but their efficiency and convergence differ a lot.
+
+The Metropolis--Hastings sampler gives accurate point estimates: the posterior means of $N_0$ and $\lambda$ are very close to the true values. However, the chain mixes slowly and shows strong autocorrelation, as seen in the small effective sample sizes and large Geweke $z$-scores. These problems come from using a single-chain, random-walk proposal. The MH sampler takes many small
+correlated steps, so it explores the posterior slowly. Even with carefully chosen proposal widths, MH cannot move efficiently along the elongated, correlated posterior typical of exponential decay models.
+
+In contrast, the affine-invariant ensemble sampler in \texttt{emcee} works much better. It updates walkers based on other walkers’ positions, so it adapts naturally to correlations in the posterior. This lets the sampler explore the parameter space quickly, producing large ESS values and stable Geweke scores.
+Because of this, the emcee sampler can efficiently handle stretched or skewed distributions like the one we see for $N_0$ and $\lambda$, which have a clear negative correlation.
+
+Another difference is robustness. MH is very sensitive to the choice of proposal widths. In comparison, the ensemble sampler needs very little tuning beyond the number of walkers and their initial positions. This makes it more reliable, especially when the posterior shape is unknown.
+
+These results also highlight a general point: modern ensemble-based samplers can be much more efficient than classical random-walk MCMC, even in low-dimensional problems with correlated parameters. For more complicated decay models, or when adding extra parameters like background noise or multiple decay channels, the advantages of ensemble samplers would be even greater.
+
+Overall, while Metropolis--Hastings is a useful teaching tool and a baseline method, the affine-invariant ensemble sampler provides better performance, easier diagnostics, and more reliable uncertainty estimates for radioactive decay problems.
+
+\section{Conclusion}
+
+In this project, we used Bayesian inference to study a classical radioactive decay model. We generated noisy synthetic data and estimated the initial activity $N_0$ and decay constant $\lambda$. Two MCMC algorithms were tested: a hand-written Metropolis--Hastings sampler and the affine-invariant ensemble sampler from the \texttt{emcee} package.
+
+Both samplers recovered the true parameters with small uncertainties. This shows that Bayesian methods are a strong framework for estimating parameters in exponential decay systems. But the performance of the two samplers is very different. The Metropolis--Hastings chain showed strong autocorrelation, highly correlated steps, and slow exploration of the posterior. This led to
+small effective sample sizes and poor convergence diagnostics. These issues are well known for random-walk proposals when the posterior is elongated or correlated.
+
+The ensemble sampler performed much better. It mixed quickly, produced large effective sample sizes, and had stable convergence diagnostics, all with minimal tuning. Its affine-invariant proposals adapt automatically to correlations in the posterior, so it explores the parameter space efficiently. The sampling efficiency was roughly an order of magnitude better than
+Metropolis--Hastings, showing the practical advantages of modern ensemble MCMC methods, even for simple, low-dimensional problems.
+
+Overall, this study shows that basic MCMC methods are useful for learning and getting started, but advanced samplers like the Goodman--Weare ensemble method offer big improvements in efficiency and reliability. For more complex decay models, larger datasets, or higher-dimensional problems, these benefits would be even greater. This highlights the value of using modern sampling tools when
+accurate uncertainty estimates and computational efficiency are important.
+
+\begin{thebibliography}{9}
+
+\bibitem{emcee}
+D.~Foreman-Mackey, D.~W.~Hogg, D.~Lang, and J.~Goodman,
+``emcee: The MCMC Hammer,''
+\textit{Publications of the Astronomical Society of the Pacific}, vol.~125, p.~306, 2013.
+
+\bibitem{goodman}
+J.~Goodman and J.~Weare,
+``Ensemble Samplers with Affine Invariance,''
+\textit{Communications in Applied Mathematics and Computational Science}, vol.~5, pp.~65--80, 2010.
+
+\bibitem{rosenthal-mcmc-overview}
+J.~S.~Rosenthal,
+``A First Look at Rigorous Approaches to MCMC Convergence,''
+\textit{Probability Surveys}, vol.~1, pp.~1--46, 2004.
+
+\bibitem{iosr-applied-physics}
+Eduardo De Paiva,
+``A Simple Monte Carlo Simulation To Illustrate The Uranium-238 Decay Series And Nuclear Stability Principles,''
+\textit{IOSR Journal of Applied Physics}, vol.~17, no.~4, ser.~II, pp.~01--07, 2019.
+
+\bibitem{ijeast}
+Sahajpreet Singh,
+``MONTE CARLO SIMULATION OF RADIOACTIVE DECAY,''
+\textit{International Journal of Engineering and Applied Science and Technology}, pp.~86--90.
+
+\bibitem{mueller-mcmc}
+J.~Mueller,
+``Monte Carlo Methods and Bayesian Computation: MCMC,''
+IMES/University of São Paulo, 2020.
+
+\end{thebibliography}
+
+
+\end{document}
